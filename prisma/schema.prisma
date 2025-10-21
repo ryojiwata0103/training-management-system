@@ -1,0 +1,175 @@
+// Prisma Schema for Training Management System
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ユーザー(受講者・講師)
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  password      String
+  role          Role      @default(STUDENT)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // リレーション
+  progress      Progress[]
+  assignments   AssignmentSubmission[]
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN       // 講師・管理者
+  STUDENT     // 受講者
+}
+
+// 研修プログラム(フェーズ)
+model Phase {
+  id            String    @id @default(cuid())
+  title         String    // e.g., "フェーズ1:請求書管理のデジタル化"
+  description   String?
+  order         Int       // 1, 2, 3
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // リレーション
+  weeks         Week[]
+
+  @@map("phases")
+}
+
+// 週次カリキュラム
+model Week {
+  id            String    @id @default(cuid())
+  phase         Phase     @relation(fields: [phaseId], references: [id], onDelete: Cascade)
+  phaseId       String
+  weekNumber    Int       // 1-52
+  title         String    // e.g., "第1週:オリエンテーション & Excel基礎①"
+  description   String?   // 学習内容の説明
+  goals         String[]  // 目標のリスト
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // リレーション
+  materials     Material[]
+  assignments   Assignment[]
+  faqs          FAQ[]
+  progress      Progress[]
+
+  @@map("weeks")
+  @@unique([phaseId, weekNumber])
+}
+
+// 研修資料
+model Material {
+  id            String    @id @default(cuid())
+  week          Week      @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  weekId        String
+  title         String    // e.g., "スライド資料", "ハンズオン資料"
+  type          MaterialType
+  content       String    @db.Text  // Markdown形式
+  fileUrl       String?   // 添付ファイルのURL(オプション)
+  order         Int       // 表示順
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // リレーション
+  progress      Progress[]
+
+  @@map("materials")
+}
+
+enum MaterialType {
+  SLIDE         // スライド資料
+  HANDSON       // ハンズオン資料
+  EXERCISE      // 演習問題
+  REFERENCE     // 参考資料
+}
+
+// 宿題
+model Assignment {
+  id            String    @id @default(cuid())
+  week          Week      @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  weekId        String
+  title         String
+  description   String    @db.Text  // Markdown形式
+  dueDate       DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // リレーション
+  submissions   AssignmentSubmission[]
+
+  @@map("assignments")
+}
+
+// 宿題提出
+model AssignmentSubmission {
+  id            String    @id @default(cuid())
+  assignment    Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  assignmentId  String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  content       String    @db.Text  // 提出内容
+  fileUrl       String?   // 提出ファイルのURL
+  timeSpent     Int?      // 所要時間(分)
+  difficulty    Int?      // 難易度(1-5)
+  feedback      String?   @db.Text  // 講師からのフィードバック
+  submittedAt   DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("assignment_submissions")
+  @@unique([assignmentId, userId])
+}
+
+// FAQ
+model FAQ {
+  id            String    @id @default(cuid())
+  week          Week?     @relation(fields: [weekId], references: [id], onDelete: SetNull)
+  weekId        String?   // nullの場合は全体共通FAQ
+  question      String
+  answer        String    @db.Text
+  order         Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("faqs")
+}
+
+// 進捗管理
+model Progress {
+  id               String    @id @default(cuid())
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           String
+  week             Week      @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  weekId           String
+  material         Material? @relation(fields: [materialId], references: [id], onDelete: SetNull)
+  materialId       String?
+
+  // 進捗状態
+  materialCompleted Boolean  @default(false)
+  handsonCompleted  Boolean  @default(false)
+  exerciseCompleted Boolean  @default(false)
+  assignmentSubmitted Boolean @default(false)
+
+  // 自己評価
+  understanding    Int?      // 理解度(1-5)
+  learningTime     Int?      // 学習時間(分)
+  notes            String?   @db.Text  // メモ
+
+  // 日時
+  sessionDate      DateTime? // 研修実施日
+  completedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@map("progress")
+  @@unique([userId, weekId])
+}
